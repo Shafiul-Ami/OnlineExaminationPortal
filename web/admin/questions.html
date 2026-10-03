@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Questions · ExamSphere</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js"></script>
+</head>
+<body>
+  <main class="page"><div class="container">
+    <div class="page-head">
+      <div><div class="eyebrow">Question bank</div><h1>MCQ questions</h1><p id="summary">Create, edit and organise questions subject-wise and topic-wise.</p></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" id="importBtn">Import CSV</button>
+        <button class="btn btn-primary" id="addBtn">Add question</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="input-icon grow" style="flex:2;min-width:220px"><span id="sIcon"></span><input class="input" id="q" placeholder="Search question text…" style="width:100%"></div>
+      <select class="input" id="fSubject"><option value="">All subjects</option></select>
+      <select class="input" id="fTopic" disabled><option value="">All topics</option></select>
+      <select class="input" id="fDiff"><option value="">Any difficulty</option><option>EASY</option><option>MEDIUM</option><option>HARD</option></select>
+    </div>
+
+    <div id="list"></div>
+    <div class="pager" id="pager"></div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api, $ } = App;
+  await App.init({ role: 'ADMIN', active: 'questions' });
+  $('#sIcon').innerHTML = icon('search');
+  $('#addBtn').insertAdjacentHTML('afterbegin', icon('plus'));
+  $('#importBtn').insertAdjacentHTML('afterbegin', icon('upload'));
+
+  const subjects = await api('/api/subjects');
+  const topicCache = {};
+  const topicsOf = async (sid) => (topicCache[sid] ||= (await api('/api/subjects/' + sid)).topics);
+  const subjectOptions = (sel) => subjects.map((s) => `<option value="${s.id}" ${s.id == sel ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+  const topicOptions = (topics, sel) => topics.map((t) => `<option value="${t.id}" ${t.id == sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+
+  const filters = { subjectId: App.qs('subjectId') || '', topicId: App.qs('topicId') || '', difficulty: '', q: '', page: 1 };
+  $('#fSubject').insertAdjacentHTML('beforeend', subjectOptions(filters.subjectId));
+
+  async function syncTopicFilter() {
+    const sel = $('#fTopic');
+    if (!filters.subjectId) { sel.innerHTML = '<option value="">All topics</option>'; sel.disabled = true; filters.topicId = ''; return; }
+    const topics = await topicsOf(filters.subjectId);
+    sel.innerHTML = '<option value="">All topics</option>' + topicOptions(topics, filters.topicId);
+    sel.disabled = false;
+  }
+  await syncTopicFilter();
+
+  async function load() {
+    const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== '' && v != null));
+    history.replaceState(null, '', '?' + new URLSearchParams(Object.entries({ subjectId: filters.subjectId, topicId: filters.topicId }).filter(([, v]) => v)));
+    const data = await api('/api/admin/questions?' + params);
+    $('#summary').textContent = `${data.total} question${data.total === 1 ? '' : 's'} match your filters.`;
+    const list = $('#list');
+    list.innerHTML = data.items.length ? data.items.map((q) => `
+      <article class="q-item">
+        <div class="q-item-head">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip"><span class="dot" style="background:${esc(q.subjectColor)}"></span>${esc(q.subjectName)}</span>
+            <span class="chip">${esc(q.topicName)}</span>${App.diffChip(q.difficulty)}
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="icon-btn" data-edit="${q.id}" aria-label="Edit question">${icon('edit')}</button>
+            <button class="icon-btn" data-del="${q.id}" aria-label="Delete question" style="color:var(--bad)">${icon('trash')}</button>
+          </div>
+        </div>
+        <h4>${esc(q.questionText)}</h4>
+        <div class="q-opts">${['A', 'B', 'C', 'D'].map((L) => `<div class="${q.correctOption === L ? 'ok' : ''}"><b>${L}</b>${esc(q['option' + L])}${q.correctOption === L ? `<span style="margin-left:auto;color:var(--ok)">${icon('check')}</span>` : ''}</div>`).join('')}</div>
+        ${q.explanation ? `<div class="explain">${icon('bulb')}<div>${esc(q.explanation)}</div></div>` : ''}
+      </article>`).join('')
+      : `<div class="card">${App.emptyState('help', 'No questions found', 'Try different filters or add a new question.', `<button class="btn btn-primary" id="emptyAdd">${icon('plus')} Add question</button>`)}</div>`;
+    const ea = $('#emptyAdd'); if (ea) ea.addEventListener('click', () => questionForm());
+
+    list.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', async () => questionForm(await api('/api/admin/questions/' + b.dataset.edit))));
+    list.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+      if (!await App.confirm({ title: 'Delete question?', message: 'This question will be permanently removed from the question bank.', confirmText: 'Delete', danger: true })) return;
+      try { await api('/api/admin/questions/' + b.dataset.del, { method: 'DELETE' }); App.toast('Question deleted'); load(); }
+      catch (e) { App.toast(e.message, 'error'); }
+    }));
+
+    // pagination
+    const p = data.page, n = data.pages;
+    if (n <= 1) { $('#pager').innerHTML = ''; return; }
+    const pages = [...new Set([1, p - 1, p, p + 1, n].filter((x) => x >= 1 && x <= n))].sort((a, b) => a - b);
+    let html = `<button ${p === 1 ? 'disabled' : ''} data-p="${p - 1}" aria-label="Previous page">${icon('chevronLeft')}</button>`;
+    pages.forEach((x, i) => {
+      if (i && x - pages[i - 1] > 1) html += '<span class="muted">…</span>';
+      html += `<button class="${x === p ? 'active' : ''}" data-p="${x}">${x}</button>`;
+    });
+    html += `<button ${p === n ? 'disabled' : ''} data-p="${p + 1}" aria-label="Next page">${icon('chevronRight')}</button>`;
+    $('#pager').innerHTML = html;
+    $('#pager').querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => { filters.page = +b.dataset.p; load(); scrollTo({ top: 0, behavior: 'smooth' }); }));
+  }
+
+  $('#fSubject').addEventListener('change', async (e) => { filters.subjectId = e.target.value; filters.topicId = ''; filters.page = 1; await syncTopicFilter(); load(); });
+  $('#fTopic').addEventListener('change', (e) => { filters.topicId = e.target.value; filters.page = 1; load(); });
+  $('#fDiff').addEventListener('change', (e) => { filters.difficulty = e.target.value; filters.page = 1; load(); });
+  let deb;
+  $('#q').addEventListener('input', (e) => { clearTimeout(deb); deb = setTimeout(() => { filters.q = e.target.value; filters.page = 1; load(); }, 300); });
+
+  // ---------- subject/topic pickers used by both modals ----------
+  async function wirePickers(el, subjectId, topicId) {
+    const sSel = el.querySelector('#mSubject'), tSel = el.querySelector('#mTopic');
+    sSel.innerHTML = '<option value="">Select subject…</option>' + subjectOptions(subjectId);
+    const fill = async () => {
+      if (!sSel.value) { tSel.innerHTML = '<option value="">Select subject first</option>'; tSel.disabled = true; return; }
+      const topics = await topicsOf(sSel.value);
+      tSel.innerHTML = topics.length ? '<option value="">Select topic…</option>' + topicOptions(topics, topicId) : '<option value="">No topics — add one first</option>';
+      tSel.disabled = !topics.length;
+    };
+    sSel.addEventListener('change', () => { topicId = null; fill(); });
+    await fill();
+  }
+  const pickerHtml = `<div class="row"><div class="field"><label for="mSubject">Subject</label><select class="input" id="mSubject"></select></div>
+    <div class="field"><label for="mTopic">Topic</label><select class="input" id="mTopic"></select></div></div>`;
+
+  // ---------- add / edit question ----------
+  function questionForm(q) {
+    const correct = q?.correctOption || 'A';
+    const diff = q?.difficulty || 'MEDIUM';
+    App.modal({
+      title: q ? 'Edit question' : 'Add question', wide: true,
+      body: `${pickerHtml}
+        <div class="field"><label for="mText">Question</label><textarea class="input" id="mText" maxlength="2000" placeholder="Type the question…">${esc(q?.questionText || '')}</textarea></div>
+        <div class="field"><label>Options <span class="muted" style="font-weight:600">(select the radio next to the correct answer)</span></label>
+          ${['A', 'B', 'C', 'D'].map((L) => `<div class="correct-pick ${L === correct ? 'is-correct' : ''}">
+            <input type="radio" name="correct" value="${L}" ${L === correct ? 'checked' : ''} aria-label="Mark ${L} as correct">
+            <span class="letter">${L}</span><input class="input" data-opt="${L}" maxlength="500" placeholder="Option ${L}" value="${esc(q?.['option' + L] || '')}"></div>`).join('')}
+        </div>
+        <div class="field"><label>Difficulty</label><div class="seg">${['EASY', 'MEDIUM', 'HARD'].map((d) => `<label><input type="radio" name="diff" value="${d}" ${d === diff ? 'checked' : ''}><span>${d[0] + d.slice(1).toLowerCase()}</span></label>`).join('')}</div></div>
+        <div class="field"><label for="mExpl">Explanation <span class="muted">(optional, shown in the result review)</span></label><textarea class="input" id="mExpl" maxlength="2000" style="min-height:70px">${esc(q?.explanation || '')}</textarea></div>`,
+      footer: `<button class="btn btn-ghost" data-close>Cancel</button>
+        ${q ? '' : `<button class="btn btn-ghost" id="saveMore" data-busy="Saving…">Save &amp; add another</button>`}
+        <button class="btn btn-primary" id="save" data-busy="Saving…">${icon('check')} Save question</button>`,
+      async onOpen(el, close) {
+        await wirePickers(el, q?.subjectId || filters.subjectId, q?.topicId || filters.topicId);
+        el.querySelectorAll('input[name=correct]').forEach((r) => r.addEventListener('change', () => {
+          el.querySelectorAll('.correct-pick').forEach((row) => row.classList.toggle('is-correct', row.querySelector('input[type=radio]').checked));
+        }));
+        const submit = (again) => async (e) => App.busy(e.currentTarget, async () => {
+          const body = {
+            topicId: el.querySelector('#mTopic').value,
+            questionText: el.querySelector('#mText').value,
+            optionA: el.querySelector('[data-opt=A]').value, optionB: el.querySelector('[data-opt=B]').value,
+            optionC: el.querySelector('[data-opt=C]').value, optionD: el.querySelector('[data-opt=D]').value,
+            correctOption: el.querySelector('input[name=correct]:checked').value,
+            difficulty: el.querySelector('input[name=diff]:checked').value,
+            explanation: el.querySelector('#mExpl').value,
+          };
+          if (!body.topicId) return App.toast('Please choose a subject and topic', 'error');
+          try {
+            await api(q ? '/api/admin/questions/' + q.id : '/api/admin/questions', { method: q ? 'PUT' : 'POST', body });
+            App.toast(q ? 'Question updated' : 'Question added');
+            load();
+            if (again) {
+              el.querySelector('#mText').value = ''; el.querySelector('#mExpl').value = '';
+              el.querySelectorAll('[data-opt]').forEach((i) => { i.value = ''; });
+              el.querySelector('#mText').focus();
+            } else close();
+          } catch (err) { App.toast(err.message, 'error'); }
+        });
+        el.querySelector('#save').addEventListener('click', submit(false));
+        const more = el.querySelector('#saveMore'); if (more) more.addEventListener('click', submit(true));
+      },
+    });
+  }
+
+  // ---------- CSV import ----------
+  function importForm() {
+    const sample = 'question,optionA,optionB,optionC,optionD,correct,explanation,difficulty\n"What is 2 + 2?",3,4,5,6,B,"Basic addition",EASY';
+    App.modal({
+      title: 'Import questions from CSV', wide: true,
+      body: `${pickerHtml}
+        <div class="field"><label>CSV format</label><div class="code">${esc(sample)}</div>
+          <small class="muted">Columns: question, optionA–D, correct (A/B/C/D), explanation (optional), difficulty (EASY/MEDIUM/HARD, optional). The header row is optional. Wrap text containing commas in double quotes.</small></div>
+        <div class="field"><label for="csvFile">Upload a .csv file or paste below</label><input type="file" id="csvFile" accept=".csv,text/csv" class="input"></div>
+        <div class="field"><textarea class="input" id="csvText" style="min-height:150px;font-family:ui-monospace,Consolas,monospace;font-size:.85rem" placeholder="Paste CSV rows here…"></textarea></div>
+        <div id="importResult"></div>`,
+      footer: `<button class="btn btn-ghost" data-close>Close</button><button class="btn btn-primary" id="doImport" data-busy="Importing…">${icon('upload')} Import</button>`,
+      async onOpen(el) {
+        await wirePickers(el, filters.subjectId, filters.topicId);
+        el.querySelector('#csvFile').addEventListener('change', (e) => {
+          const f = e.target.files[0]; if (!f) return;
+          const reader = new FileReader();
+          reader.onload = () => { el.querySelector('#csvText').value = reader.result; };
+          reader.readAsText(f);
+        });
+        el.querySelector('#doImport').addEventListener('click', (e) => App.busy(e.currentTarget, async () => {
+          const topicId = el.querySelector('#mTopic').value;
+          if (!topicId) return App.toast('Please choose a subject and topic', 'error');
+          try {
+            const res = await api('/api/admin/questions/import', { method: 'POST', body: { topicId, csv: el.querySelector('#csvText').value } });
+            el.querySelector('#importResult').innerHTML =
+              `<div class="alert ${res.imported ? 'alert-info' : 'alert-error'}">${icon(res.imported ? 'checkCircle' : 'alert')}<span>Imported ${res.imported} question${res.imported === 1 ? '' : 's'}.${res.errors.length ? ` ${res.errors.length} row(s) skipped.` : ''}</span></div>` +
+              (res.errors.length ? `<div class="code" style="white-space:pre-wrap">${res.errors.map((er) => `Line ${er.line}: ${esc(er.message)}`).join('\n')}</div>` : '');
+            if (res.imported) { App.toast(`Imported ${res.imported} questions`); load(); }
+          } catch (err) { App.toast(err.message, 'error'); }
+        }));
+      },
+    });
+  }
+
+  $('#addBtn').addEventListener('click', () => questionForm());
+  $('#importBtn').addEventListener('click', importForm);
+  const openNew = App.qs('new');
+  await load();
+  if (openNew) questionForm();
+})();
+</script>
+</body>
+</html>

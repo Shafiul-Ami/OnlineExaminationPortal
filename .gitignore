@@ -1,0 +1,14 @@
+# Local configuration (contains your database password)
+config.properties
+
+# Build output
+build/
+bin/
+out/
+*.class
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

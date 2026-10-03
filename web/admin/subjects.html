@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subjects &amp; Topics · ExamSphere</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js"></script>
+</head>
+<body>
+  <main class="page"><div class="container">
+    <div class="page-head">
+      <div><div class="eyebrow">Question bank</div><h1>Subjects &amp; topics</h1><p>Organise questions by subject, then break each subject into topics.</p></div>
+      <button class="btn btn-primary" id="addSubject">New subject</button>
+    </div>
+    <div class="subjects-layout">
+      <div class="card"><div class="card-head"><h3>Subjects</h3><span class="chip" id="sCount">0</span></div><div class="s-list" id="sList"></div></div>
+      <div class="card" id="detail"></div>
+    </div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api } = App;
+  await App.init({ role: 'ADMIN', active: 'subjects' });
+  const addBtn = document.getElementById('addSubject');
+  addBtn.insertAdjacentHTML('afterbegin', icon('plus'));
+
+  const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#0ea5e9', '#14b8a6', '#64748b'];
+  let subjects = [];
+  let selected = Number(App.qs('id')) || null;
+
+  async function load() {
+    subjects = await api('/api/subjects');
+    if (!subjects.find((s) => s.id === selected)) selected = subjects[0]?.id ?? null;
+    renderList();
+    renderDetail();
+  }
+
+  function renderList() {
+    document.getElementById('sCount').textContent = subjects.length;
+    document.getElementById('sList').innerHTML = subjects.length ? subjects.map((s) => `
+      <button class="s-item ${s.id === selected ? 'active' : ''}" style="--c:${esc(s.color)}" data-id="${s.id}">
+        <span class="s-dot">${esc(s.name[0])}</span>
+        <span class="s-info"><strong>${esc(s.name)}</strong><small>${s.topicCount} topics · ${s.questionCount} questions</small></span>
+        ${icon('chevronRight')}
+      </button>`).join('') : App.emptyState('layers', 'No subjects', 'Create your first subject.');
+    document.querySelectorAll('.s-item').forEach((b) => b.addEventListener('click', () => {
+      selected = +b.dataset.id; history.replaceState(null, '', '?id=' + selected); renderList(); renderDetail();
+    }));
+  }
+
+  async function renderDetail() {
+    const box = document.getElementById('detail');
+    if (!selected) { box.innerHTML = App.emptyState('layers', 'Select or create a subject', 'Topics for the selected subject appear here.'); return; }
+    const s = await api('/api/subjects/' + selected);
+    box.innerHTML = `
+      <div class="card-head">
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span class="s-dot" style="width:52px;height:52px;border-radius:14px;background:${esc(s.color)};color:#fff;display:grid;place-items:center;font-weight:800;font-size:1.3rem;flex-shrink:0">${esc(s.name[0])}</span>
+          <div style="min-width:0"><h3>${esc(s.name)}</h3><div class="muted" style="font-size:.88rem">${esc(s.description || 'No description')}</div></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" id="editS">${icon('edit')} Edit</button>
+          <button class="btn btn-ghost btn-sm" id="delS" style="color:var(--bad)">${icon('trash')} Delete</button>
+        </div>
+      </div>
+      <div class="card-head" style="margin-top:8px"><h3 style="font-size:1rem">Topics (${s.topics.length})</h3>
+        <button class="btn btn-soft btn-sm" id="addT">${icon('plus')} Add topic</button></div>
+      <div id="topics">${s.topics.length ? s.topics.map((t) => `
+        <div class="topic-row">
+          <div class="t-info"><strong>${esc(t.name)}</strong><small>${t.questionCount} questions${t.description ? ' · ' + esc(t.description) : ''}</small></div>
+          <a class="btn btn-soft btn-sm" href="/admin/questions.html?subjectId=${s.id}&topicId=${t.id}">${icon('help')} Questions</a>
+          <button class="icon-btn" data-edit="${t.id}" aria-label="Edit topic">${icon('edit')}</button>
+          <button class="icon-btn" data-del="${t.id}" aria-label="Delete topic" style="color:var(--bad)">${icon('trash')}</button>
+        </div>`).join('') : App.emptyState('layers', 'No topics yet', 'Add topics so you can attach questions to them.')}</div>`;
+
+    document.getElementById('editS').addEventListener('click', () => subjectForm(s));
+    document.getElementById('delS').addEventListener('click', async () => {
+      if (!await App.confirm({ title: 'Delete subject?', message: `"${s.name}" and all of its topics and questions will be permanently deleted. Past results are kept.`, confirmText: 'Delete subject', danger: true })) return;
+      try { await api('/api/admin/subjects/' + s.id, { method: 'DELETE' }); App.toast('Subject deleted'); selected = null; load(); }
+      catch (e) { App.toast(e.message, 'error'); }
+    });
+    document.getElementById('addT').addEventListener('click', () => topicForm(s.id));
+    box.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => topicForm(s.id, s.topics.find((t) => t.id === +b.dataset.edit))));
+    box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+      const t = s.topics.find((x) => x.id === +b.dataset.del);
+      if (!await App.confirm({ title: 'Delete topic?', message: `"${t.name}" and its ${t.questionCount} questions will be permanently deleted.`, confirmText: 'Delete topic', danger: true })) return;
+      try { await api('/api/admin/topics/' + t.id, { method: 'DELETE' }); App.toast('Topic deleted'); load(); }
+      catch (e) { App.toast(e.message, 'error'); }
+    }));
+  }
+
+  function subjectForm(s) {
+    let color = s?.color || COLORS[subjects.length % COLORS.length];
+    App.modal({
+      title: s ? 'Edit subject' : 'New subject',
+      body: `
+        <div class="field"><label for="sName">Name</label><input class="input" id="sName" maxlength="100" value="${esc(s?.name || '')}" placeholder="e.g. Physics"></div>
+        <div class="field"><label for="sDesc">Description</label><textarea class="input" id="sDesc" maxlength="500" placeholder="Short description shown to students">${esc(s?.description || '')}</textarea></div>
+        <div class="field"><label>Colour</label><div class="swatches">${COLORS.map((c) => `<button type="button" class="swatch ${c === color ? 'active' : ''}" style="background:${c}" data-c="${c}" aria-label="${c}"></button>`).join('')}</div></div>`,
+      footer: `<button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="save" data-busy="Saving…">${icon('check')} Save</button>`,
+      onOpen(el, close) {
+        el.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => {
+          color = b.dataset.c; el.querySelectorAll('.swatch').forEach((x) => x.classList.toggle('active', x === b));
+        }));
+        el.querySelector('#save').addEventListener('click', (e) => App.busy(e.currentTarget, async () => {
+          const body = { name: el.querySelector('#sName').value, description: el.querySelector('#sDesc').value, color };
+          try {
+            if (s) await api('/api/admin/subjects/' + s.id, { method: 'PUT', body });
+            else selected = (await api('/api/admin/subjects', { method: 'POST', body })).id;
+            close(); App.toast(s ? 'Subject updated' : 'Subject created'); load();
+          } catch (err) { App.toast(err.message, 'error'); }
+        }));
+      },
+    });
+  }
+
+  function topicForm(subjectId, t) {
+    App.modal({
+      title: t ? 'Edit topic' : 'New topic',
+      body: `
+        <div class="field"><label for="tName">Name</label><input class="input" id="tName" maxlength="100" value="${esc(t?.name || '')}" placeholder="e.g. Thermodynamics"></div>
+        <div class="field"><label for="tDesc">Description <span class="muted">(optional)</span></label><input class="input" id="tDesc" maxlength="500" value="${esc(t?.description || '')}"></div>`,
+      footer: `<button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="save" data-busy="Saving…">${icon('check')} Save</button>`,
+      onOpen(el, close) {
+        const save = (e) => App.busy(el.querySelector('#save'), async () => {
+          const body = { subjectId, name: el.querySelector('#tName').value, description: el.querySelector('#tDesc').value };
+          try {
+            await api(t ? '/api/admin/topics/' + t.id : '/api/admin/topics', { method: t ? 'PUT' : 'POST', body });
+            close(); App.toast(t ? 'Topic updated' : 'Topic created'); load();
+          } catch (err) { App.toast(err.message, 'error'); }
+        });
+        el.querySelector('#save').addEventListener('click', save);
+        el.querySelector('#tName').addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+      },
+    });
+  }
+
+  addBtn.addEventListener('click', () => subjectForm(null));
+  load();
+})();
+</script>
+</body>
+</html>
