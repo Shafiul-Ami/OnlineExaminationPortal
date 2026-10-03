@@ -1,0 +1,4 @@
+build/
+bin/
+.git/
+src/main/resources/app.properties

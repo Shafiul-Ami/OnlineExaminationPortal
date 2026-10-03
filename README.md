@@ -4,24 +4,34 @@ An online MCQ examination portal built with **Java + PostgreSQL** and a hand-cra
 Students take timed tests subject-wise or topic-wise and get their result immediately. Admins create and manage
 questions subject-wise and topic-wise.
 
-No Maven, no frameworks: it runs on the JDK's built-in HTTP server plus the PostgreSQL JDBC driver in `lib/`.
+A **Jakarta Servlet web app for Apache Tomcat 10.1+** (same setup as a classic Tomcat project): no Maven needed,
+`build.ps1` compiles everything into `OnlineExaminationPortal.war` and deploys it to Tomcat.
 
-## Run it
+## Run it on Tomcat (local server)
 
-Requirements: **JDK 21+** and **PostgreSQL** (running locally).
+Requirements: **JDK 17+**, **Apache Tomcat 10.1+** and **PostgreSQL** running locally.
 
-1. Copy `config.example.properties` to `config.properties` and set `db.password`
-   (the run scripts create the copy for you on first run). `config.properties` is git-ignored, so your password never gets pushed.
-2. Start the app:
-   - Windows: double-click `run.bat`
-   - macOS / Linux / Git Bash: `./run.sh`
-   - VS Code: open the folder, install the *Extension Pack for Java*, then press **F5** (uses "Run ExamSphere")
-3. Open http://localhost:8080
+1. Copy `src/main/resources/app.properties.example` to `app.properties` (same folder) and set `DB_PASSWORD`.
+   `app.properties` is git-ignored, so your password is never pushed. (`build.ps1` creates the copy for you if it is missing.)
+2. In VS Code, check the `CATALINA_HOME` / `JAVA_HOME` paths at the top of `.vscode/tasks.json`.
+3. Build, deploy and start:
+   - **VS Code:** press **F5** ("Debug on Tomcat"), or *Terminal → Run Task → Tomcat: Build, Deploy & Start*
+   - **Terminal:** `powershell -ExecutionPolicy Bypass -File build.ps1` (copies the WAR to `%CATALINA_HOME%webapps` when `CATALINA_HOME` is set), then start Tomcat with `%CATALINA_HOME%instartup.bat`
+4. Open **http://localhost:8080/OnlineExaminationPortal/**
+
+After changing code, run *Tomcat: Build & Deploy* again; Tomcat reloads the new WAR automatically.
 
 On first start the app automatically:
 - creates the `exam_portal` database and all tables,
-- creates the admin account (`admin@exam.com` / `Admin@123` by default; change these in `config.properties`),
-- loads 4 sample subjects with 37 questions (set `seed.sample=false` to skip).
+- creates the admin account (`admin@exam.com` / `Admin@123` by default; change `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `app.properties` before the first start),
+- loads 4 sample subjects with 37 questions (set `SEED_SAMPLE=false` to skip).
+
+## Put it online (Render)
+
+`Dockerfile` + `render.yaml` deploy the app on Tomcat with a free PostgreSQL database:
+on render.com choose **New → Blueprint**, pick this GitHub repository and click **Apply**.
+The site is then served at the root of your Render URL; the admin password is generated for you
+(Render dashboard → the web service → *Environment* → `ADMIN_PASSWORD`).
 
 ## Features
 
@@ -56,28 +66,30 @@ question,optionA,optionB,optionC,optionD,correct,explanation,difficulty
 ## Project structure
 
 ```
-config.example.properties  template for config.properties (DB + server + admin settings; env vars override, e.g. DB_PASSWORD)
-run.bat / run.sh           compile + start
-lib/                       PostgreSQL JDBC driver
-src/portal/
-  Main.java                bootstraps DB and HTTP server
-  Config.java
-  db/Db.java               JDBC helper (rows -> camelCase maps)
-  db/Schema.java           tables, admin seed, sample questions
-  auth/                    password hashing, sessions, roles
-  http/                    tiny router, JSON parser, static file server
-  api/AuthApi.java         /api/auth/*
-  api/CatalogApi.java      /api/subjects, /api/stats (public)
-  api/ExamApi.java         /api/exams/* (start, submit, result, history)
-  api/AdminApi.java        /api/admin/* (subjects, topics, questions, import, results, students)
-web/
-  index.html               landing page
-  login.html, register.html
-  result.html              result + answer review (student & admin)
-  student/                 dashboard, exams (picker), test (exam screen), history
-  admin/                   dashboard, subjects, questions, results, students
-  css/style.css            design system (light + dark theme)
-  js/app.js                API client, navbar, modals, toasts, icons
+build.ps1                       compile + package WAR + deploy to Tomcat
+lib/                            jakarta.servlet-api (compile only, Tomcat provides it) + PostgreSQL JDBC driver
+Dockerfile, render.yaml         online hosting on Tomcat
+src/main/java/com/onlineexam/
+  listener/AppInitListener.java   on startup: create DB + tables, admin account, sample questions
+  http/ApiServlet.java            @WebServlet("/api/*") - single entry point for the REST API
+  http/Router.java                matches METHOD + /path/{param}, checks login/role, writes JSON
+  http/Request.java, Json.java, ApiException.java
+  api/AuthApi.java                /api/auth/*
+  api/CatalogApi.java             /api/subjects, /api/stats (public)
+  api/ExamApi.java                /api/exams/* (start, submit, result, history)
+  api/AdminApi.java               /api/admin/* (subjects, topics, questions, import, results, students)
+  auth/                           password hashing (PBKDF2), DB-backed sessions, roles
+  db/Db.java, db/Schema.java      JDBC helper, tables, seed data
+  util/AppConfig.java             settings: environment variables -> app.properties -> defaults
+src/main/resources/
+  app.properties.example          copy to app.properties (git-ignored)
+src/main/webapp/
+  WEB-INF/web.xml
+  index.html, login.html, register.html, result.html, 404.jsp
+  student/                        dashboard, exams (picker), test (exam screen), history
+  admin/                          dashboard, subjects, questions, results, students
+  css/style.css                   design system (light + dark theme)
+  js/app.js                       API client, navbar, modals, toasts, icons, context-path handling
 ```
 
 ## Database tables

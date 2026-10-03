@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Students · ExamSphere</title>
+  <link rel="icon" href="../favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/app.js"></script>
+</head>
+<body>
+  <main class="page"><div class="container">
+    <div class="page-head">
+      <div><div class="eyebrow">Students</div><h1>Registered students</h1><p id="summary">Everyone who has signed up to take tests.</p></div>
+      <div class="input-icon" style="min-width:260px"><span id="sIcon"></span><input class="input" id="q" placeholder="Search students…"></div>
+    </div>
+    <div class="card"><div class="table-wrap" id="table"></div></div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api, $ } = App;
+  await App.init({ role: 'ADMIN', active: 'students' });
+  $('#sIcon').innerHTML = icon('search');
+  let all = await api('/api/admin/students');
+
+  function render() {
+    const q = $('#q').value.toLowerCase();
+    const rows = all.filter((s) => s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q));
+    $('#summary').textContent = `${all.length} registered student${all.length === 1 ? '' : 's'}.`;
+    $('#table').innerHTML = rows.length ? `<table class="table"><thead><tr><th>Student</th><th>Tests</th><th>Average</th><th>Best</th><th>Last active</th><th>Joined</th><th></th></tr></thead><tbody>
+      ${rows.map((s) => `<tr>
+        <td><div class="person"><span class="avatar">${esc(App.initials(s.name))}</span><div><strong>${esc(s.name)}</strong><small>${esc(s.email)}</small></div></div></td>
+        <td>${s.tests}</td>
+        <td>${s.avgScore != null ? App.scoreBadge(s.avgScore) : '<span class="muted">—</span>'}</td>
+        <td>${s.bestScore != null ? App.scoreBadge(s.bestScore) : '<span class="muted">—</span>'}</td>
+        <td style="white-space:nowrap">${App.fmtDate(s.lastActive)}</td>
+        <td style="white-space:nowrap">${App.fmtDate(s.createdAt, false)}</td>
+        <td class="actions">
+          <a class="btn btn-soft btn-sm" href="/admin/results.html?userId=${s.id}">${icon('chart')} Results</a>
+          <button class="icon-btn" data-del="${s.id}" aria-label="Delete student" style="color:var(--bad)">${icon('trash')}</button>
+        </td></tr>`).join('')}
+      </tbody></table>` : `<div style="padding:22px">${App.emptyState('users', 'No students', all.length ? 'No students match your search.' : 'Students appear here after they register.')}</div>`;
+    document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+      const s = all.find((x) => x.id === +b.dataset.del);
+      if (!await App.confirm({ title: 'Delete student?', message: `${s.name}'s account and all of their test results will be permanently deleted.`, confirmText: 'Delete student', danger: true })) return;
+      try { await api('/api/admin/students/' + s.id, { method: 'DELETE' }); all = all.filter((x) => x.id !== s.id); render(); App.toast('Student deleted'); }
+      catch (e) { App.toast(e.message, 'error'); }
+    }));
+  }
+  $('#q').addEventListener('input', render);
+  render();
+})();
+</script>
+</body>
+</html>

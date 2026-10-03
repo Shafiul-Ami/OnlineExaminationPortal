@@ -1,12 +1,20 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "java",
-            "name": "Run ExamSphere",
-            "request": "launch",
-            "mainClass": "portal.Main",
-            "cwd": "${workspaceFolder}"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Debug on Tomcat",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 8000,
+      "preLaunchTask": "Tomcat: Build, Deploy & Start"
+    },
+    {
+      "type": "java",
+      "name": "Attach to running Tomcat",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 8000
+    }
+  ]
 }

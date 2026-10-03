@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Result · ExamSphere</title>
+  <link rel="icon" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/app.js"></script>
+</head>
+<body>
+  <canvas id="confetti"></canvas>
+  <main class="page"><div class="container" id="root">
+    <div class="skeleton" style="height:260px;margin-bottom:20px"></div>
+    <div class="skeleton" style="height:400px"></div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api } = App;
+  const user = await App.init({ role: 'ANY' });
+  const isAdmin = user.role === 'ADMIN';
+  if (!isAdmin) document.querySelectorAll('.nav-link[data-key="history"]').forEach((a) => a.classList.add('active'));
+  else document.querySelectorAll('.nav-link[data-key="results"]').forEach((a) => a.classList.add('active'));
+
+  const id = App.qs('id');
+  const root = document.getElementById('root');
+  let r;
+  try { r = await api(`/api/exams/${id}/result`); }
+  catch (e) { root.innerHTML = App.emptyState('alert', 'Result unavailable', e.message); return; }
+
+  const pct = Number(r.scorePercent);
+  const verdict = pct >= 90 ? ['Outstanding!', 'You absolutely nailed it. Brilliant work.']
+    : pct >= 75 ? ['Excellent work!', 'A strong performance. Keep it up.']
+    : pct >= 50 ? ['Good effort!', 'You passed. Review the misses below to level up.']
+    : ['Keep practicing!', 'Every attempt makes you better. Check the explanations below.'];
+  const ringColor = pct >= 75 ? 'var(--ok)' : pct >= 50 ? 'var(--warn)' : 'var(--bad)';
+  const C = 2 * Math.PI * 80;
+  const pctLabel = pct % 1 ? pct.toFixed(1) : pct;
+
+  const retake = isAdmin ? '' : `<a class="btn btn-primary" href="/student/exams.html">${icon('rotate')} Take another test</a>`;
+  const back = isAdmin ? `<a class="btn btn-ghost" href="/admin/results.html">${icon('arrowLeft')} All results</a>`
+                       : `<a class="btn btn-ghost" href="/student/dashboard.html">${icon('grid')} Dashboard</a>`;
+
+  root.innerHTML = `
+    <div class="card result-hero" style="margin-bottom:20px">
+      <div class="ring">
+        <svg viewBox="0 0 180 180"><circle class="track" cx="90" cy="90" r="80" fill="none" stroke-width="14"/>
+          <circle class="prog" id="prog" cx="90" cy="90" r="80" fill="none" style="stroke:${ringColor}" stroke-width="14" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
+        <div class="center"><div><strong id="pct">0%</strong><span>Score</span></div></div>
+      </div>
+      <div>
+        <div class="eyebrow">${esc(r.subjectName)}${r.topicName ? ' · ' + esc(r.topicName) : ' · All topics'}</div>
+        <h1 class="verdict">${verdict[0]}</h1>
+        <p class="muted" style="margin:0">${verdict[1]}${isAdmin ? ` <br>Student: <b>${esc(r.studentName)}</b> (${esc(r.studentEmail)})` : ''}</p>
+        <div class="mini-stats">
+          <div class="mini-stat"><strong>${r.correctCount}<span style="font-size:.9rem;color:var(--muted)"> / ${r.totalQuestions}</span></strong><span>${icon('checkCircle')} Correct</span></div>
+          <div class="mini-stat"><strong>${r.wrongCount}</strong><span>${icon('xCircle')} Wrong</span></div>
+          <div class="mini-stat"><strong>${r.unansweredCount}</strong><span>${icon('minusCircle')} Skipped</span></div>
+          <div class="mini-stat"><strong>${App.fmtDuration(r.timeTakenSec)}</strong><span>${icon('clock')} Time taken</span></div>
+        </div>
+        <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:20px">${retake}${back}
+          <button class="btn btn-ghost" onclick="print()">${icon('printer')} Print</button></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-head"><h3>Topic-wise performance</h3><span class="muted" style="font-size:.85rem">Submitted ${App.fmtDate(r.submittedAt)}</span></div>
+      <div class="bars">${r.topicBreakdown.map((t) => {
+        const p = Math.round((t.correct / t.total) * 100);
+        return `<div class="bar-row"><span class="name" title="${esc(t.topic)}">${esc(t.topic)}</span>
+          <div class="track" data-tip="<b>${esc(t.topic)}</b><br>${t.correct} of ${t.total} correct"><div class="fill" data-w="${p}"></div></div>
+          <span class="val">${p}%</span></div>`;
+      }).join('')}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Answer review</h3>
+        <div class="tabs no-print" id="tabs">
+          <button class="tab active" data-f="all">All (${r.review.length})</button>
+          <button class="tab" data-f="correct">Correct (${r.correctCount})</button>
+          <button class="tab" data-f="wrong">Wrong (${r.wrongCount})</button>
+          <button class="tab" data-f="skipped">Skipped (${r.unansweredCount})</button>
+        </div>
+      </div>
+      <div id="review"></div>
+    </div>`;
+
+  const status = (q) => q.selectedOption == null ? 'skipped' : q.isCorrect ? 'correct' : 'wrong';
+  const renderReview = (filter) => {
+    const items = r.review.map((q, i) => ({ q, i })).filter(({ q }) => filter === 'all' || status(q) === filter);
+    document.getElementById('review').innerHTML = items.length ? items.map(({ q, i }) => {
+      const st = status(q);
+      const badge = st === 'correct' ? `<span class="chip chip-easy">${icon('check')} Correct</span>`
+        : st === 'wrong' ? `<span class="chip chip-hard">${icon('x')} Wrong</span>` : `<span class="chip chip-medium">${icon('minusCircle')} Skipped</span>`;
+      const opts = ['A', 'B', 'C', 'D'].map((L) => {
+        const isRight = q.correctOption === L, isPicked = q.selectedOption === L;
+        const cls = isRight ? 'is-correct' : isPicked ? 'is-wrong' : '';
+        const tag = isRight ? `<span class="tag" style="color:var(--ok)">${icon('check')} Correct answer</span>`
+          : isPicked ? `<span class="tag" style="color:var(--bad)">${icon('x')} Your answer</span>` : '';
+        return `<div class="r-opt ${cls}"><span class="letter">${L}</span><span>${esc(q['option' + L])}</span>${tag}</div>`;
+      }).join('');
+      return `<div class="review-item ${st}">
+        <div class="q-meta" style="margin-bottom:10px"><span class="q-num">Q${i + 1}</span>${badge}${App.diffChip(q.difficulty)}<span class="chip">${esc(q.topic)}</span></div>
+        <div class="q-text">${esc(q.questionText)}</div>${opts}
+        ${q.explanation ? `<div class="explain">${icon('bulb')}<div><b>Explanation:</b> ${esc(q.explanation)}</div></div>` : ''}
+      </div>`;
+    }).join('') : App.emptyState('checkCircle', 'Nothing here', 'No questions in this category.');
+  };
+  renderReview('all');
+  document.querySelectorAll('#tabs .tab').forEach((t) => t.addEventListener('click', () => {
+    document.querySelectorAll('#tabs .tab').forEach((x) => x.classList.toggle('active', x === t));
+    renderReview(t.dataset.f);
+  }));
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.getElementById('prog').style.strokeDashoffset = C * (1 - pct / 100);
+    document.querySelectorAll('.fill[data-w]').forEach((f) => { f.style.width = f.dataset.w + '%'; });
+  }));
+  App.animateCount(document.getElementById('pct'), pct, { decimals: pct % 1 ? 1 : 0, suffix: '%' });
+  App.bindTooltips();
+
+  if (App.qs('fresh') && pct >= 75 && !matchMedia('(prefers-reduced-motion: reduce)').matches) confetti();
+
+  function confetti() {
+    const cv = document.getElementById('confetti'), ctx = cv.getContext('2d');
+    cv.width = innerWidth; cv.height = innerHeight;
+    const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9'];
+    const parts = Array.from({ length: 160 }, () => ({
+      x: Math.random() * cv.width, y: -20 - Math.random() * cv.height * .5, r: 4 + Math.random() * 6,
+      c: colors[Math.floor(Math.random() * colors.length)], vy: 2 + Math.random() * 4, vx: -2 + Math.random() * 4,
+      a: Math.random() * Math.PI, va: -.1 + Math.random() * .2,
+    }));
+    const start = performance.now();
+    (function frame(t) {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      parts.forEach((p) => {
+        p.x += p.vx; p.y += p.vy; p.a += p.va;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.c;
+        ctx.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2); ctx.restore();
+      });
+      if (t - start < 4000) requestAnimationFrame(frame); else ctx.clearRect(0, 0, cv.width, cv.height);
+    })(start);
+  }
+})();
+</script>
+</body>
+</html>

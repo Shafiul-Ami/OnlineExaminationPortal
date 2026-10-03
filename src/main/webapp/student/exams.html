@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Take a Test · ExamSphere</title>
+  <link rel="icon" href="../favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/app.js"></script>
+</head>
+<body>
+  <main class="page"><div class="container">
+    <div class="page-head">
+      <div><div class="eyebrow">Take a test</div><h1>Choose a subject</h1><p>Pick a subject, then focus on one topic or mix them all.</p></div>
+      <div class="input-icon" style="min-width:260px"><span id="searchIcon"></span><input class="input" id="search" placeholder="Search subjects…"></div>
+    </div>
+    <div class="subject-grid" id="grid">
+      <div class="skeleton" style="height:200px"></div><div class="skeleton" style="height:200px"></div><div class="skeleton" style="height:200px"></div>
+    </div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api } = App;
+  await App.init({ role: 'STUDENT', active: 'exams' });
+  document.getElementById('searchIcon').innerHTML = icon('search');
+
+  const subjects = await api('/api/subjects');
+  const grid = document.getElementById('grid');
+  const render = (list) => {
+    grid.innerHTML = list.length ? list.map((s) => `
+      <button class="subject-card" style="--c:${esc(s.color)}" data-id="${s.id}" ${s.questionCount ? '' : 'disabled'}>
+        <div class="s-icon">${esc(s.name[0])}</div>
+        <h3>${esc(s.name)}</h3>
+        <p>${esc(s.description || 'Practice questions across multiple topics.')}</p>
+        <div class="subject-meta"><span>${icon('layers')} ${s.topicCount} topics</span><span>${icon('help')} ${s.questionCount} questions</span></div>
+      </button>`).join('') : App.emptyState('search', 'No subjects found', 'Try a different search.');
+    grid.querySelectorAll('.subject-card').forEach((b) => b.addEventListener('click', () => openPicker(+b.dataset.id)));
+  };
+  render(subjects);
+  document.getElementById('search').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    render(subjects.filter((s) => s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q)));
+  });
+
+  async function openPicker(id) {
+    let subject;
+    try { subject = await api('/api/subjects/' + id); } catch (e) { return App.toast(e.message, 'error'); }
+    const total = subject.topics.reduce((n, t) => n + t.questionCount, 0);
+    const topicHtml = `
+      <label class="topic-opt"><input type="radio" name="topic" value="" data-count="${total}" checked>
+        <div><strong>All topics</strong><div class="muted" style="font-size:.82rem">Mixed questions from the whole subject</div></div><span class="count">${total} Qs</span></label>
+      ${subject.topics.map((t) => `
+      <label class="topic-opt ${t.questionCount ? '' : 'disabled'}"><input type="radio" name="topic" value="${t.id}" data-count="${t.questionCount}" ${t.questionCount ? '' : 'disabled'}>
+        <div><strong>${esc(t.name)}</strong>${t.description ? `<div class="muted" style="font-size:.82rem">${esc(t.description)}</div>` : ''}</div><span class="count">${t.questionCount} Qs</span></label>`).join('')}`;
+
+    App.modal({
+      title: subject.name,
+      body: `
+        <div class="field"><label>Topic</label><div class="picker-topics">${topicHtml}</div></div>
+        <div class="field">
+          <div class="range-head"><label for="count">Number of questions</label><strong id="countVal">10</strong></div>
+          <input type="range" id="count" min="1" value="10">
+          <div class="muted" style="font-size:.85rem;display:flex;align-items:center;gap:6px">${icon('clock')} Time limit: <b id="timeVal"></b> (1 minute per question)</div>
+        </div>
+        <div class="alert alert-info">${icon('info')}<span>Once you start, the timer runs even if you close the page. The test is submitted automatically when time runs out.</span></div>`,
+      footer: `<button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="go" data-busy="Preparing test…">${icon('play')} Start test</button>`,
+      onOpen(el) {
+        const range = el.querySelector('#count');
+        const sync = () => {
+          const max = +el.querySelector('input[name=topic]:checked').dataset.count;
+          range.max = Math.max(1, Math.min(max, 100));
+          if (+range.value > +range.max) range.value = range.max;
+          el.querySelector('#countVal').textContent = range.value;
+          el.querySelector('#timeVal').textContent = range.value + ' min';
+        };
+        if (+range.value > total) range.value = total;
+        el.querySelectorAll('input[name=topic]').forEach((r) => r.addEventListener('change', sync));
+        range.addEventListener('input', sync);
+        sync();
+        el.querySelector('#go').addEventListener('click', (e) => App.busy(e.currentTarget, async () => {
+          try {
+            const topicVal = el.querySelector('input[name=topic]:checked').value;
+            const paper = await api('/api/exams/start', { method: 'POST', body: { subjectId: id, topicId: topicVal || null, count: +range.value } });
+            App.go('/student/test.html?id=' + paper.id);
+          } catch (err) { App.toast(err.message, 'error'); }
+        }));
+      },
+    });
+  }
+
+  const pre = App.qs('subject');
+  if (pre) openPicker(+pre);
+})();
+</script>
+</body>
+</html>

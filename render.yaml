@@ -1,0 +1,34 @@
+# Render Blueprint: creates the PostgreSQL database and the web app together.
+# On render.com: New -> Blueprint -> pick this repository -> Apply.
+# The database login details are passed to the app automatically - nothing to type in.
+
+databases:
+  - name: exam-portal-db
+    plan: free
+    databaseName: exam_portal
+    user: exam_admin
+
+services:
+  - type: web
+    name: online-examination-portal
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true            # every push to main redeploys the site
+    envVars:
+      - key: PORT               # Tomcat listens on 8080
+        value: "8080"
+      - key: DB_HOST
+        fromDatabase: { name: exam-portal-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: exam-portal-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: exam-portal-db, property: database }
+      - key: DB_USER
+        fromDatabase: { name: exam-portal-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: exam-portal-db, property: password }
+      - key: ADMIN_EMAIL
+        value: admin@exam.com
+      - key: ADMIN_PASSWORD     # random secret; view it in the Render dashboard -> Environment
+        generateValue: true

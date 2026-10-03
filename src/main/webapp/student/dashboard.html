@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · ExamSphere</title>
+  <link rel="icon" href="../favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/app.js"></script>
+</head>
+<body>
+  <main class="page"><div class="container">
+    <div class="welcome">
+      <div><h1 id="hello">Welcome back!</h1><p>Keep the streak going. Every test makes you sharper.</p></div>
+      <a class="btn btn-ghost btn-lg" href="/student/exams.html" id="startBtn">Start a new test</a>
+    </div>
+
+    <div id="resume"></div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-icon g1" data-icon="file"></div><div class="value" id="sTests">0</div><div class="label">Tests completed</div></div>
+      <div class="stat"><div class="stat-icon g2" data-icon="target"></div><div class="value" id="sAvg">0%</div><div class="label">Average score</div></div>
+      <div class="stat"><div class="stat-icon g3" data-icon="trophy"></div><div class="value" id="sBest">0%</div><div class="label">Best score</div></div>
+      <div class="stat"><div class="stat-icon g4" data-icon="checkCircle"></div><div class="value" id="sCorrect">0</div><div class="label">Correct answers</div></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-head"><h3>Recent results</h3><a class="btn btn-ghost btn-sm" href="/student/history.html">View all</a></div>
+        <div id="recent"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Average score by subject</h3></div>
+        <div id="bySubject"></div>
+      </div>
+    </div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api } = App;
+  const user = await App.init({ role: 'STUDENT', active: 'dashboard' });
+  document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+  document.getElementById('startBtn').insertAdjacentHTML('afterbegin', icon('play'));
+  const hour = new Date().getHours();
+  document.getElementById('hello').textContent = `${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}, ${user.name.split(' ')[0]}!`;
+
+  const s = await api('/api/exams/summary');
+  App.animateCount(document.getElementById('sTests'), s.tests);
+  App.animateCount(document.getElementById('sAvg'), s.avgScore, { decimals: s.avgScore % 1 ? 1 : 0, suffix: '%' });
+  App.animateCount(document.getElementById('sBest'), s.bestScore, { decimals: s.bestScore % 1 ? 1 : 0, suffix: '%' });
+  App.animateCount(document.getElementById('sCorrect'), s.correctAnswers);
+
+  if (s.inProgress.length) {
+    document.getElementById('resume').innerHTML = s.inProgress.map((a) => `
+      <div class="card" style="display:flex;align-items:center;gap:16px;margin-bottom:20px;border-color:var(--warn);flex-wrap:wrap">
+        <div class="stat-icon g4" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:#fff">${icon('clock')}</div>
+        <div style="flex:1;min-width:200px"><strong>You have a test in progress</strong><div class="muted">${esc(a.subjectName)}${a.topicName ? ' · ' + esc(a.topicName) : ''} · ${a.totalQuestions} questions</div></div>
+        <a class="btn btn-primary" href="/student/test.html?id=${a.id}">${icon('play')} Resume test</a>
+      </div>`).join('');
+  }
+
+  document.getElementById('recent').innerHTML = s.recent.length ? s.recent.map((r) => `
+    <a class="list-item" href="/result.html?id=${r.id}" style="color:inherit">
+      <div class="avatar" style="background:var(--grad)">${esc(r.subjectName[0])}</div>
+      <div class="li-main"><strong>${esc(r.subjectName)}${r.topicName ? ' · ' + esc(r.topicName) : ''}</strong>
+        <small>${r.correctCount}/${r.totalQuestions} correct · ${App.fmtDate(r.submittedAt)}</small></div>
+      ${App.scoreBadge(r.scorePercent)}
+    </a>`).join('')
+    : App.emptyState('file', 'No tests yet', 'Take your first test to see results here.', `<a class="btn btn-primary" href="/student/exams.html">${icon('play')} Take a test</a>`);
+
+  document.getElementById('bySubject').innerHTML = s.bySubject.length ? `<div class="bars">${s.bySubject.map((b) => `
+    <div class="bar-row">
+      <span class="name" title="${esc(b.subjectName)}">${esc(b.subjectName)}</span>
+      <div class="track" data-tip="<b>${esc(b.subjectName)}</b><br>Average ${b.avgScore}% over ${b.tests} test${b.tests == 1 ? '' : 's'}"><div class="fill" data-w="${b.avgScore}"></div></div>
+      <span class="val">${b.avgScore}%</span>
+    </div>`).join('')}</div>`
+    : App.emptyState('chart', 'No data yet', 'Your subject performance will appear here.');
+  requestAnimationFrame(() => document.querySelectorAll('.fill[data-w]').forEach((f) => { f.style.width = f.dataset.w + '%'; }));
+  App.bindTooltips();
+})();
+</script>
+</body>
+</html>

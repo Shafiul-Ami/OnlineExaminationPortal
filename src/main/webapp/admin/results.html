@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Results · ExamSphere</title>
+  <link rel="icon" href="../favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/app.js"></script>
+</head>
+<body>
+  <main class="page"><div class="container">
+    <div class="page-head">
+      <div><div class="eyebrow">Results</div><h1>Student results</h1><p id="summary">All submitted tests across the portal.</p></div>
+      <button class="btn btn-ghost" id="exportBtn">Export CSV</button>
+    </div>
+    <div class="toolbar">
+      <div class="input-icon" style="flex:2;min-width:220px"><span id="sIcon"></span><input class="input" id="q" placeholder="Search by student name or email…" style="width:100%"></div>
+      <select class="input" id="fSubject"><option value="">All subjects</option></select>
+    </div>
+    <div id="studentBanner"></div>
+    <div class="card"><div class="table-wrap" id="table"></div></div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api, $ } = App;
+  await App.init({ role: 'ADMIN', active: 'results' });
+  $('#sIcon').innerHTML = icon('search');
+  $('#exportBtn').insertAdjacentHTML('afterbegin', icon('file'));
+
+  const subjects = await api('/api/subjects');
+  $('#fSubject').insertAdjacentHTML('beforeend', subjects.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join(''));
+  const userId = App.qs('userId');
+  let rows = [];
+
+  async function load() {
+    const p = new URLSearchParams();
+    if ($('#fSubject').value) p.set('subjectId', $('#fSubject').value);
+    if ($('#q').value.trim()) p.set('q', $('#q').value.trim());
+    if (userId) p.set('userId', userId);
+    rows = await api('/api/admin/attempts?' + p);
+    const avg = rows.length ? (rows.reduce((n, r) => n + r.scorePercent, 0) / rows.length).toFixed(1) : 0;
+    $('#summary').textContent = `${rows.length} result${rows.length === 1 ? '' : 's'} · average score ${avg}%`;
+    if (userId && rows[0]) $('#studentBanner').innerHTML = `<div class="alert alert-info">${icon('user')}<span>Showing results for <b>${esc(rows[0].studentName)}</b> · <a href="/admin/results.html">show everyone</a></span></div>`;
+    $('#table').innerHTML = rows.length ? `<table class="table"><thead><tr><th>Student</th><th>Subject / Topic</th><th>Score</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Time</th><th>Submitted</th><th></th></tr></thead><tbody>
+      ${rows.map((r) => `<tr>
+        <td><div class="person"><span class="avatar">${esc(App.initials(r.studentName))}</span><div><strong>${esc(r.studentName)}</strong><small>${esc(r.studentEmail)}</small></div></div></td>
+        <td>${esc(r.subjectName)}<div class="muted" style="font-size:.8rem">${esc(r.topicName || 'All topics')}</div></td>
+        <td>${App.scoreBadge(r.scorePercent)}</td><td>${r.correctCount}/${r.totalQuestions}</td><td>${r.wrongCount}</td><td>${r.unansweredCount}</td>
+        <td>${App.fmtDuration(r.timeTakenSec)}</td><td style="white-space:nowrap">${App.fmtDate(r.submittedAt)}</td>
+        <td class="actions"><a class="btn btn-soft btn-sm" href="/result.html?id=${r.id}">${icon('eye')} View</a></td></tr>`).join('')}
+      </tbody></table>` : `<div style="padding:22px">${App.emptyState('chart', 'No results', 'No submitted tests match these filters.')}</div>`;
+  }
+
+  $('#fSubject').addEventListener('change', load);
+  let deb; $('#q').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(load, 300); });
+
+  $('#exportBtn').addEventListener('click', () => {
+    const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['Student', 'Email', 'Subject', 'Topic', 'Score %', 'Correct', 'Wrong', 'Skipped', 'Total', 'Time (s)', 'Submitted'];
+    const lines = [head.map(cell).join(',')].concat(rows.map((r) => [r.studentName, r.studentEmail, r.subjectName, r.topicName || 'All topics', r.scorePercent, r.correctCount, r.wrongCount, r.unansweredCount, r.totalQuestions, r.timeTakenSec, r.submittedAt].map(cell).join(',')));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+    a.download = 'exam-results.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  load();
+})();
+</script>
+</body>
+</html>

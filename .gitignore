@@ -1,14 +1,14 @@
-# Local configuration (contains your database password)
-config.properties
-
-# Build output
+# Build output (re-created by build.ps1)
 build/
 bin/
-out/
+*.war
 *.class
 
-# IDE / OS
+# SECRETS - never upload (copy app.properties.example to create it)
+src/main/resources/app.properties
+
+# IDE / OS junk
 .idea/
 *.iml
-.DS_Store
 Thumbs.db
+.DS_Store

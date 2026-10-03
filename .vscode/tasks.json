@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "env": {
+      "CATALINA_HOME": "C:\\Users\\shafi\\Downloads\\apache-tomcat-10.1.60-windows-x64\\apache-tomcat-10.1.60",
+      "JAVA_HOME": "C:\\Program Files\\Java\\jdk-24",
+      "JPDA_ADDRESS": "localhost:8000"
+    }
+  },
+  "tasks": [
+    {
+      "label": "Tomcat: Build & Deploy",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\build.ps1"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Tomcat: Start",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/c", "%CATALINA_HOME%\\bin\\catalina.bat", "jpda", "run"],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "tomcat",
+        "pattern": { "regexp": "^\\s*SEVERE: (.*)$", "message": 1 },
+        "background": { "activeBegins": true, "beginsPattern": "Using CATALINA_BASE", "endsPattern": "Server startup in" }
+      }
+    },
+    {
+      "label": "Tomcat: Stop",
+      "type": "process",
+      "command": "cmd.exe",
+      "args": ["/c", "%CATALINA_HOME%\\bin\\shutdown.bat"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Tomcat: Build, Deploy & Start",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Tomcat: Build & Deploy", "Tomcat: Start"],
+      "problemMatcher": []
+    }
+  ]
+}

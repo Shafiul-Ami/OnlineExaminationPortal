@@ -1,0 +1,15 @@
+# Copy this file to app.properties (same folder) and fill in your own values.
+# app.properties is listed in .gitignore, so your real password is never uploaded.
+# On a hosting server, set these as environment variables instead.
+# The database is created automatically on first start if it does not exist.
+DB_URL=jdbc:postgresql://localhost:5432/exam_portal
+DB_USER=postgres
+DB_PASSWORD=your_password_here
+
+# First admin account (created only if no admin exists yet)
+ADMIN_NAME=Administrator
+ADMIN_EMAIL=admin@exam.com
+ADMIN_PASSWORD=Admin@123
+
+# Load sample subjects/topics/questions when the database is empty
+SEED_SAMPLE=true

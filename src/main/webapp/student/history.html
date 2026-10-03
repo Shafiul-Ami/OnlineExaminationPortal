@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Results · ExamSphere</title>
+  <link rel="icon" href="../favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="../js/app.js"></script>
+</head>
+<body>
+  <main class="page"><div class="container">
+    <div class="page-head">
+      <div><div class="eyebrow">My results</div><h1>Test history</h1><p>Every test you've taken, with scores and full answer reviews.</p></div>
+      <a class="btn btn-primary" href="/student/exams.html" id="newBtn">New test</a>
+    </div>
+    <div class="card">
+      <div class="table-wrap" id="table"><div class="skeleton" style="height:200px;margin:22px"></div></div>
+    </div>
+  </div></main>
+
+<script>
+(async () => {
+  const { icon, esc, api } = App;
+  await App.init({ role: 'STUDENT', active: 'history' });
+  document.getElementById('newBtn').insertAdjacentHTML('afterbegin', icon('play'));
+  const rows = await api('/api/exams/mine');
+  const box = document.getElementById('table');
+  if (!rows.length) {
+    box.style.margin = '0';
+    box.innerHTML = App.emptyState('trophy', 'No results yet', 'Your completed tests will appear here.', `<a class="btn btn-primary" href="/student/exams.html">${icon('play')} Take your first test</a>`);
+    return;
+  }
+  box.innerHTML = `<table class="table"><thead><tr><th>Subject / Topic</th><th>Score</th><th>Correct</th><th>Wrong</th><th>Skipped</th><th>Time</th><th>Date</th><th></th></tr></thead><tbody>
+    ${rows.map((r) => {
+      const done = r.status === 'SUBMITTED';
+      return `<tr>
+        <td><strong>${esc(r.subjectName)}</strong><div class="muted" style="font-size:.8rem">${esc(r.topicName || 'All topics')} · ${r.totalQuestions} Qs</div></td>
+        <td>${done ? App.scoreBadge(r.scorePercent) : '<span class="chip chip-medium">In progress</span>'}</td>
+        <td>${done ? r.correctCount : '—'}</td><td>${done ? r.wrongCount : '—'}</td><td>${done ? r.unansweredCount : '—'}</td>
+        <td>${done ? App.fmtDuration(r.timeTakenSec) : '—'}</td>
+        <td style="white-space:nowrap">${App.fmtDate(r.submittedAt || r.startedAt)}</td>
+        <td class="actions">${done ? `<a class="btn btn-soft btn-sm" href="/result.html?id=${r.id}">${icon('eye')} View</a>`
+                                   : `<a class="btn btn-primary btn-sm" href="/student/test.html?id=${r.id}">${icon('play')} Resume</a>`}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+})();
+</script>
+</body>
+</html>
